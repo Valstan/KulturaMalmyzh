@@ -639,6 +639,125 @@ jobs:
           echo "POST /api/ingest/posts без ключа → $code (ожидалось 401)"
           [ "$code" = "401" ] || { echo "::error::приёмник не отвечает 401 без ключа: $code"; exit 1; }
 
+      # Право публикации приёмника — ОТДЕЛЬНЫМ ключом (решение владельца 03.10,
+      # заказ Сарафана через переговорную; урок #124: флаг publish в канале
+      # доставки молча раздал бы право всем держателям ключа доставки).
+      # POST /api/ingest/posts принимает publish:true только с заголовком
+      # X-Publish-Key (секрет KULTURA_PUBLISH_KEY грантом setka); без ключа —
+      # черновик + warning, как раньше. Форма шага — калька с ключа доставки
+      # выше (мост /tmp, без EXIT-trap на удалённой стороне, состояние последней
+      # строкой, второй рубеж против пустого значения). Значения в письмах/логах
+      # не ходят. Идемпотентно: ключ стоит и грант выдан — шаг ничего не меняет.
+      - name: Приёмник — publish-ключ, зеркало, грант
+        env:
+          VAULT_URL: ${{ secrets.VAULT_URL }}
+        run: |
+          set -euo pipefail
+
+          # 1. Ключ на боксе: есть и непуст — не трогаем; нет — генерируем и
+          # рестартим (значение печатаем только фактом, никогда — самим).
+          KEYRAW=$(ssh dkmalmyzh 'sudo bash -s' <<'REMOTE'
+          set -e
+          rm -f /tmp/k-publish.txt
+          ENV=/etc/dkmalmyzh/dkmalmyzh.env
+          if grep -q '^KULTURA_PUBLISH_KEY=.' "$ENV"; then
+            echo "exists"
+          else
+            printf 'KULTURA_PUBLISH_KEY=%s\n' "$(openssl rand -hex 32)" >> "$ENV"
+            chmod 640 "$ENV"
+            systemctl restart dkmalmyzh
+            echo "generated+restarted"
+          fi
+          grep '^KULTURA_PUBLISH_KEY=' "$ENV" | head -1 | sed 's/^KULTURA_PUBLISH_KEY=//;s/^"//;s/"$//' > /tmp/k-publish.txt
+          chown valstan:valstan /tmp/k-publish.txt
+          chmod 600 /tmp/k-publish.txt
+          REMOTE
+          )
+          # Состояние — последняя строка: systemctl и sudo иногда печатают своё.
+          KEYSTATE="${KEYRAW##*$'\n'}"
+          echo "KULTURA_PUBLISH_KEY на боксе: $KEYSTATE"
+          case "$KEYSTATE" in
+            exists|generated+restarted) ;;
+            *) echo "::error::неожиданное состояние ключа: $KEYSTATE"; exit 1 ;;
+          esac
+          sleep 8 # дать сервису подняться, если был рестарт
+          scp -q dkmalmyzh:/tmp/k-publish.txt k-publish.txt
+          ssh dkmalmyzh 'rm -f /tmp/k-publish.txt' || true
+          # Второй рубеж против пустого значения — до зеркала в vault.
+          [ -s k-publish.txt ] || { echo "::error::ключ с бокса пуст — в vault ничего не кладём"; exit 1; }
+
+          # Один trap на шаг: отзыв vault-сессии и уборка временных файлов.
+          TOKEN=""
+          cleanup() {
+            if [ -n "$TOKEN" ] && [ -n "${VAULT_URL:-}" ]; then
+              curl -sS -X DELETE "$VAULT_URL/api/secrets/session" -H "Authorization: Bearer $TOKEN" \
+                -o /dev/null -w 'DELETE /session → %{http_code}\n' 2>/dev/null || true
+            fi
+            rm -f k-publish.txt mirror.json mirror-out.txt grants.json grant.json grant-out.txt
+          }
+          trap cleanup EXIT
+          trap 'cleanup; exit 130' INT TERM
+
+          # 2. Зеркало в свою комнату + грант Сарафану — best-effort: их
+          # недоступность откладывает грант, но не роняет деплой.
+          if [ -z "${VAULT_URL:-}" ]; then
+            echo "::warning::secrets.VAULT_URL не задан — зеркало и грант пропущены"
+          elif [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+            echo "::warning::OIDC недоступен (permissions: id-token: write) — зеркало и грант пропущены"
+          else
+            ASSERTION="$(curl -sf -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=karman-vault" | jq -r '.value // empty')" || ASSERTION=""
+            if [ -z "$ASSERTION" ]; then
+              echo "::warning::удостоверение прогона не выдано — зеркало и грант пропущены"
+            else
+              echo "::add-mask::$ASSERTION"
+              scode=$(curl -s -o session.json -w '%{http_code}' --max-time 20 -X POST \
+                "$VAULT_URL/api/secrets/session" -H "Authorization: Bearer $ASSERTION") || scode="curl-exit-$?"
+              if [ "$scode" != "201" ]; then
+                echo "::warning::vault /session → $scode — зеркало и грант пропущены"
+                rm -f session.json
+              else
+                # Токен пришёл ответом — маскируем до первого использования (G291).
+                TOKEN="$(jq -r '.token // empty' session.json 2>/dev/null || true)"
+                CANWRITE="$(jq -r '.canWrite // false' session.json 2>/dev/null || true)"
+                rm -f session.json
+                [ -n "$TOKEN" ] || { echo "::warning::201, но token пуст"; TOKEN=""; }
+                if [ -n "$TOKEN" ]; then
+                  echo "::add-mask::$TOKEN"
+                  echo "сессия vault открыта (canWrite=$CANWRITE)"
+                  if [ "$CANWRITE" != "true" ]; then
+                    echo "::warning::сессия без права записи — зеркало и грант пропущены"
+                  else
+                    echo "::add-mask::$(cat k-publish.txt)"
+                    jq -n --arg k "$(cat k-publish.txt)" '{secrets:{KULTURA_PUBLISH_KEY:$k}}' > mirror.json
+                    mcode=$(curl -s -o mirror-out.txt -w '%{http_code}' --max-time 20 -X POST \
+                      "$VAULT_URL/api/secrets" -H "Authorization: Bearer $TOKEN" \
+                      -H 'Content-Type: application/json' --data @mirror.json) || mcode="curl-exit-$?"
+                    case "$mcode" in
+                      200|201|204) echo "зеркало KULTURA_PUBLISH_KEY в свою комнату: $mcode" ;;
+                      *) echo "::warning::зеркало не принято: HTTP $mcode" ;;
+                    esac
+                    GCODE="$(curl -s -o grants.json -w '%{http_code}' --max-time 20 \
+                      "$VAULT_URL/api/secrets/grants" -H "Authorization: Bearer $TOKEN" || true)"
+                    HAVE="$(jq -r '(if type == "array" then . else (.issued // .grants // .items // []) end) | map(select(((.sourceKey // .key // "") == "KULTURA_PUBLISH_KEY") and ((.targetSlug // .target_slug // "") == "setka"))) | length' grants.json 2>/dev/null || echo 0)"
+                    echo "GET grants: $GCODE, выдач KULTURA_PUBLISH_KEY → setka: ${HAVE:-0}"
+                    if [ "${HAVE:-0}" = "0" ]; then
+                      jq -n '{key:"KULTURA_PUBLISH_KEY", target_slug:"setka", alias:"KULTURA_PUBLISH_KEY", note:"решение владельца 03.10: право публикации приёмника Сарафану"}' > grant.json
+                      CODE="$(curl -s -o grant-out.txt -w '%{http_code}' --max-time 20 -X POST \
+                        "$VAULT_URL/api/secrets/grants" -H "Authorization: Bearer $TOKEN" \
+                        -H 'Content-Type: application/json' --data @grant.json || true)"
+                      case "$CODE" in
+                        200|201) echo "grant → setka предложен: $CODE (alias KULTURA_PUBLISH_KEY)" ;;
+                        409) echo "grant → setka: 409, уже есть — идемпотентно" ;;
+                        *) echo "::warning::grant → setka не предложен: HTTP $CODE"; head -c 300 grant-out.txt || true; echo ;;
+                      esac
+                    fi
+                  fi
+                fi
+              fi
+            fi
+          fi
+
       # Юниты импорта из ВК. Файлы кладутся каждым деплоем идемпотентно, но ТАЙМЕР
       # ОСТАНОВЛЕН (решение владельца 30.09): поставщиком новостей стал конвейер
       # Сарафана через приёмник, а свой мотор поверх давал бы дубли и занимал

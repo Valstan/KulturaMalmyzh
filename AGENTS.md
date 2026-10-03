@@ -118,7 +118,8 @@ fallback «если шлюз недоступен — сходим напрям�
 /api/secrets/session`), сессия одноразовая и **отзывается в конце шага** — в
 рантайм-env бокса токена нет; адрес — `secrets.VAULT_URL` репозитория, в env
 бокса его тоже нет; что и как — `brain_matrica/docs/KARMAN_ROOM.md`. В комнате
-лежат: `GATEWAY_KEY_DKMALMYZH`, `ECOSYSTEM_KEY`, `KULTURA_INGEST_KEY`.
+лежат: `GATEWAY_KEY_DKMALMYZH`, `ECOSYSTEM_KEY`, `KULTURA_INGEST_KEY`,
+`KULTURA_PUBLISH_KEY` (право публикации приёмника — отдельным ключом, #124).
 
 Два отличия от шаблона, о которых стоит знать следующему агенту:
 
