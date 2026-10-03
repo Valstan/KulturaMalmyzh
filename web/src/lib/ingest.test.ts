@@ -155,6 +155,11 @@ describe('buildPostData', () => {
     expect(buildPostData({ ...base, status: 'published' })._status).toBe('published')
     expect(buildPostData({ ...base, status: 'draft' })._status).toBe('draft')
   })
+
+  it('публикация несёт publishedAt = дата оригинала, черновик — без метки', () => {
+    expect(buildPostData({ ...base, status: 'published' }).publishedAt).toBe(base.dateIso)
+    expect(buildPostData(base)).not.toHaveProperty('publishedAt')
+  })
 })
 
 describe('extractPublishKey', () => {

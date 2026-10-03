@@ -133,6 +133,11 @@ export type PostDataInput = {
 export function buildPostData(input: PostDataInput) {
   return {
     _status: (input.status ?? 'draft') as 'draft' | 'published',
+    // Публикация несёт publishedAt = дата оригинала (конвенция publish-all):
+    // хук populatePublishedAt проставил бы «сейчас», а черновику метка не
+    // нужна вовсе. Без неё запись, опубликованная приёмником, висит с null
+    // (прецедент 03.10 — id 1343), и добор дат publish-all её пропускает.
+    ...(input.status === 'published' ? { publishedAt: input.dateIso } : {}),
     title: input.title,
     slug: slugForVkPost(input.title, input.vkUid, input.dateIso),
     date: input.dateIso,
