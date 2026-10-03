@@ -5,9 +5,11 @@ import {
   buildPostData,
   deriveTitle,
   extractGatewayKey,
+  extractPublishKey,
   MAX_IMAGES,
   normalizeVideos,
   resolveDate,
+  resolvePublish,
   secretMatches,
   type IncomingImage,
 } from '../../../../lib/ingest'
@@ -32,10 +34,12 @@ import { uploadPhoto } from '../../../../lib/vk/import'
 //   images?:   Array<string | { url, alt? }> — перекладываем к себе сразу
 //                       (ссылки ВК-CDN протухают, G56/G63)
 //   videos?:   Array<string | { url, title? }> — не перекладываем, только ссылка
-//   publish?:  boolean — ВСЕГДА игнорируется с warning: ключа публикации нет
-//                       вовсе, всё едет черновиками, публикует человек
+//   publish?:  boolean — публикует ТОЛЬКО с заголовком X-Publish-Key (секрет
+//                       KULTURA_PUBLISH_KEY грантом setka, решение владельца
+//                       03.10); без ключа — warning + черновик. Ключ доставки
+//                       публиковать не умеет никогда (#124).
 // }
-// Ответ: { id } + warnings (+ created/updated для совместимости с отправителем).
+// Ответ: { id, published } + warnings (+ created/updated для совместимости с отправителем).
 // Повтор того же vkPostId не дублирует: черновик обновляется, опубликованное
 // не трогается. Учреждение и рубрику при повторе не перезаписываем — после
 // первой доставки они принадлежат редактору (урок #095 у портала).
@@ -89,10 +93,16 @@ export async function POST(request: Request): Promise<Response> {
   const nowIso = new Date().toISOString()
   const warnings: string[] = []
 
-  // Ключа публикации нет вовсе — флаг деградирует в warning, доставка не теряется.
-  if (body.publish === true) {
-    warnings.push('publish ignored: no publish key exists, saved as draft')
-  }
+  // Право публикации — отдельным секретом (#124): сверяем X-Publish-Key с
+  // KULTURA_INGEST_KEY-независимым KULTURA_PUBLISH_KEY. Незаданный секрет =
+  // публикация выключена (secretMatches на пустом env — false), приёмник
+  // при этом работает как раньше — черновиками.
+  const status = resolvePublish(
+    body.publish,
+    secretMatches(extractPublishKey(request), process.env.KULTURA_PUBLISH_KEY),
+    warnings,
+  )
+  const published = status === 'published'
 
   const title = deriveTitle(rawTitle, text, nowIso)
   const dateIso = resolveDate(body.date, nowIso, warnings)
@@ -162,7 +172,7 @@ export async function POST(request: Request): Promise<Response> {
     if (id !== null) mediaIds.push(id)
   }
 
-  const data = buildPostData({ title, text, vkUid: vkPostId, sourceUrl, dateIso, institutionId, category, mediaIds, videos })
+  const data = buildPostData({ title, text, vkUid: vkPostId, sourceUrl, dateIso, institutionId, category, mediaIds, videos, status })
 
   if (existing) {
     // Черновик уже есть — обновляем содержимое (правки поста в ВК доезжают).
@@ -183,20 +193,20 @@ export async function POST(request: Request): Promise<Response> {
         category: existing.category || category,
         ...(mediaIds.length ? {} : { cover: undefined, gallery: undefined }),
       },
-      draft: true,
+      draft: !published,
       context: { disableRevalidate: true },
     })
-    return Response.json({ created: false, updated: true, published: false, id: updated.id, warnings }, { status: 200 })
+    return Response.json({ created: false, updated: true, published, id: updated.id, warnings }, { status: 200 })
   }
 
   try {
     const created = await payload.create({
       collection: 'posts',
       data,
-      draft: true,
+      draft: !published,
       context: { disableRevalidate: true },
     })
-    return Response.json({ created: true, published: false, id: created.id, warnings }, { status: 201 })
+    return Response.json({ created: true, published, id: created.id, warnings }, { status: 201 })
   } catch (err) {
     // Гонка двух параллельных доставок одного vkPostId: обе прошли мимо
     // find, вторая упёрлась в unique. Не 500, а второй заход в обновление.
@@ -207,10 +217,10 @@ export async function POST(request: Request): Promise<Response> {
           collection: 'posts',
           id: retry.id,
           data,
-          draft: true,
+          draft: !published,
           context: { disableRevalidate: true },
         })
-        return Response.json({ created: false, updated: true, published: false, id: updated.id, warnings }, { status: 200 })
+        return Response.json({ created: false, updated: true, published, id: updated.id, warnings }, { status: 200 })
       }
     }
     throw err

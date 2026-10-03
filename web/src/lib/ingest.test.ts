@@ -4,8 +4,10 @@ import {
   buildPostData,
   deriveTitle,
   extractGatewayKey,
+  extractPublishKey,
   normalizeVideos,
   resolveDate,
+  resolvePublish,
   secretMatches,
 } from './ingest'
 
@@ -147,5 +149,47 @@ describe('buildPostData', () => {
     expect(data.institution).toBeUndefined()
     expect(data.category).toBeUndefined()
     expect(data.videos).toBeUndefined()
+  })
+
+  it('status published — документ публикуется, по умолчанию черновик', () => {
+    expect(buildPostData({ ...base, status: 'published' })._status).toBe('published')
+    expect(buildPostData({ ...base, status: 'draft' })._status).toBe('draft')
+  })
+})
+
+describe('extractPublishKey', () => {
+  it('берёт только X-Publish-Key', () => {
+    const req = new Request('http://x/', { headers: { 'x-publish-key': 'p1' } })
+    expect(extractPublishKey(req)).toBe('p1')
+  })
+
+  it('Bearer сюда не подходит — он занят ключом доставки', () => {
+    const req = new Request('http://x/', { headers: { authorization: 'Bearer k2' } })
+    expect(extractPublishKey(req)).toBe('')
+  })
+
+  it('без заголовка — пустая строка', () => {
+    expect(extractPublishKey(new Request('http://x/'))).toBe('')
+  })
+})
+
+describe('resolvePublish', () => {
+  it('без флага — черновик без шума', () => {
+    const warnings: string[] = []
+    expect(resolvePublish(undefined, true, warnings)).toBe('draft')
+    expect(resolvePublish(false, true, warnings)).toBe('draft')
+    expect(warnings).toEqual([])
+  })
+
+  it('флаг с верным ключом — публикация', () => {
+    const warnings: string[] = []
+    expect(resolvePublish(true, true, warnings)).toBe('published')
+    expect(warnings).toEqual([])
+  })
+
+  it('флаг без ключа — черновик с warning, доставка не теряется', () => {
+    const warnings: string[] = []
+    expect(resolvePublish(true, false, warnings)).toBe('draft')
+    expect(warnings).toHaveLength(1)
   })
 })

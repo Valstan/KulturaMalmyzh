@@ -14,8 +14,12 @@ import { vkTextToLexical, vkTitleFrom } from './vk/toLexical'
 //     (чей материал), неизвестный slug — warning + сохраняется в текстовое поле
 //     `category`, чтобы редактор видел догадку классификатора;
 //   - вид записи ставит редактор (`type: 'news'` молча, импорт не угадывает);
-//   - ключа публикации нет вовсе (мандат: «ключа публикации не просим») —
-//     `publish: true` всегда игнорируется с warning, всё едет черновиками.
+//   - право публикации — ОТДЕЛЬНЫМ ключом `KULTURA_PUBLISH_KEY` (решение
+//     владельца 03.10, заказ Сарафана через переговорную): `publish: true`
+//     публикует только с заголовком `X-Publish-Key`, без него — warning и
+//     черновик. Ключ доставки (`KULTURA_INGEST_KEY`) публиковать не умеет
+//     никогда — урок #124: флаг в канале доставки молча раздал бы право всем
+//     держателям старого ключа.
 
 export type LexicalDoc = ReturnType<typeof vkTextToLexical>
 
@@ -42,6 +46,24 @@ export function extractGatewayKey(request: Request): string {
     request.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ??
     ''
   )
+}
+
+// Ключ публикации — ТОЛЬКО своим заголовком `X-Publish-Key`, без Bearer:
+// Bearer уже занят ключом доставки, и смешивать два права в одном имени —
+// ровно та ошибка, от которой уходим (#124). Пустой — «не предъявлялся».
+export function extractPublishKey(request: Request): string {
+  return request.headers.get('x-publish-key') ?? ''
+}
+
+// Итоговый статус записи. Чистая функция ради юнитов: маршрут только сверяет
+// ключ через secretMatches и отдаёт результат сюда. Без флага — черновик без
+// шума; флаг с верным ключом — публикация; флаг без ключа — черновик +
+// warning (доставка не теряется, поведение как до 03.10).
+export function resolvePublish(publish: unknown, keyMatches: boolean, warnings: string[]): 'draft' | 'published' {
+  if (publish !== true) return 'draft'
+  if (keyMatches) return 'published'
+  warnings.push('publish ignored: no publish key presented, saved as draft')
+  return 'draft'
 }
 
 // Заголовок записи. Явного нет — первая осмысленная строка текста (≤90, по
@@ -98,17 +120,19 @@ export type PostDataInput = {
   category?: string
   mediaIds: number[]
   videos: { url: string; title?: string }[]
+  /** Статус из resolvePublish; по умолчанию черновик (поведение до 03.10). */
+  status?: 'draft' | 'published'
 }
 
 // Тело документа коллекции `posts` для payload.create/update.
 //
-// ⚠️ `_status: 'draft'` — явно, не флагом `draft`: при versions.drafts состояние
+// ⚠️ `_status` — явно, не флагом `draft`: при versions.drafts состояние
 // берётся отсюда, `draft: false` не публикует (G223). Slug несёт vkUid —
 // заголовки доставки повторяются по построению, без хвоста разные материалы
 // схлопнулись бы в один адрес (#279 у переноса Калинино).
 export function buildPostData(input: PostDataInput) {
   return {
-    _status: 'draft' as const,
+    _status: (input.status ?? 'draft') as 'draft' | 'published',
     title: input.title,
     slug: slugForVkPost(input.title, input.vkUid, input.dateIso),
     date: input.dateIso,

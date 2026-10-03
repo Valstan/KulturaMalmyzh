@@ -50,3 +50,7 @@ dist
 .claude/scheduled_tasks.lock
 .codex/
 .gemini/
+
+# Переговорная (Телефон, Ф0): присутствие — эфемерное, не коммитить; ленты —
+# коммитить обычным flow, они след переговоров
+hotline/presence.json
