@@ -11,6 +11,7 @@ import {
   CI_DRAFT_POST_TITLE,
   CI_EVENT_SLUG,
   CI_EVENT_TITLE,
+  CI_HEAD_MEDIA_FILENAME,
   CI_INSTITUTION_SLUG,
   CI_INSTITUTION_TITLE_UPDATED,
   CI_PAGE_SLUG,
@@ -324,6 +325,27 @@ test('дома культуры: картинка, короткое имя и п
       const res = await request.get(ogImage as string)
       expect(res.status(), `картинка превью недоступна на ${path}: ${ogImage}`).toBe(200)
     }
+  })
+
+  // Д1 от 02.10: любой HEAD к REST Payload отдавал 404 — Next подставляет
+  // HEAD-запрос в экспорт GET, не меняя сам метод, а Payload матчит эндпоинт
+  // строго по методу. Робот, проверяющий картинку HEAD-запросом, видел битую
+  // обложку. Проверяем именно путь Payload (/api/media/file/…), а не статику
+  // Next: HEAD по /og.png зелен и без лечения, он регрессию не ловит.
+  test('файл медиа отвечает на HEAD теми же заголовками, что на GET', async ({ request }) => {
+    const file = `/api/media/file/${CI_HEAD_MEDIA_FILENAME}`
+    const get = await request.get(file)
+    expect(get.status(), `GET засеянного медиафайла недоступен: ${file}`).toBe(200)
+
+    const head = await request.head(file)
+    expect(head.status(), `HEAD медиафайла — 404 (Д1): ${file}`).toBe(200)
+    expect(head.headers()['content-type'], 'HEAD потерял Content-Type').toBe(
+      get.headers()['content-type'],
+    )
+    expect(head.headers()['content-length'], 'HEAD потерял Content-Length').toBe(
+      get.headers()['content-length'],
+    )
+    expect((await head.body()).length, 'у HEAD-ответа обязано быть пустое тело').toBe(0)
   })
 
   // Негативные проверки. Позитивных мало: они одинаково зелены и когда фильтр

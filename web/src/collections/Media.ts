@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url'
 
 import { adminOrEditor } from '../access/adminOrEditor'
 import { anyone } from '../access/anyone'
+import { headFileHandler } from '../lib/uploads/headFile'
 
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
@@ -24,6 +25,17 @@ export const Media: CollectionConfig = {
   admin: {
     defaultColumns: ['filename', 'alt', 'updatedAt'],
   },
+  // HEAD для файлов (Д1, 02.10): дефолтные эндпоинты Payload отвечают только на
+  // GET, и любой HEAD-запрос к /api/media/file/… уходил в 404. Санитизация
+  // ставит кастомные эндпоинты раньше дефолтных, поэтому этот матчится первым
+  // и только на HEAD — остальные методы идут прежним путём.
+  endpoints: [
+    {
+      handler: headFileHandler,
+      method: 'head',
+      path: '/file/:filename',
+    },
+  ],
   fields: [
     {
       name: 'alt',
