@@ -2,6 +2,8 @@ import config from '@payload-config'
 import { getPayload } from 'payload'
 
 import {
+  CI_HEAD_MEDIA_ALT,
+  CI_HEAD_MEDIA_FILENAME,
   CI_INSTITUTION_SLUG,
   CI_INSTITUTION_TITLE,
   CI_INSTITUTION_TITLE_UPDATED,
@@ -147,7 +149,7 @@ const main = async () => {
     },
   })
 
-  console.log(`шаг 6/6 — создание предстоящей афиши: ок (id ${event.id})`)
+  console.log(`шаг 6/9 — создание предстоящей афиши: ок (id ${event.id})`)
 
   // Черновики — специально, чтобы негативные проверки e2e имели что не находить.
   // Пока в базе гейта лежало только опубликованное, тест «черновик не виден» был
@@ -182,7 +184,7 @@ const main = async () => {
   })
 
   console.log(
-    `шаг 7/8 — черновики для негативных проверок: ок (учреждение ${draftInstitution.id}, новость ${draftPost.id})`,
+    `шаг 7/9 — черновики для негативных проверок: ок (учреждение ${draftInstitution.id}, новость ${draftPost.id})`,
   )
 
   // Кириллический адрес: проверяет, что метаданные декодируют `params.slug`.
@@ -203,7 +205,27 @@ const main = async () => {
     },
   })
 
-  console.log(`шаг 8/8 — новость с кириллическим адресом: ок (id ${cyrillicPost.id})`)
+  console.log(`шаг 8/9 — новость с кириллическим адресом: ок (id ${cyrillicPost.id})`)
+
+  // Настоящий медиафайл для проверки HEAD (Д1): e2e открывает
+  // /api/media/file/<имя> методами GET и HEAD. PNG 1x1 — без сети и CDN.
+  const pixel = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  )
+  const headMedia = await payload.create({
+    collection: 'media',
+    context: ctx,
+    data: { alt: CI_HEAD_MEDIA_ALT },
+    file: {
+      data: pixel,
+      name: CI_HEAD_MEDIA_FILENAME,
+      mimetype: 'image/png',
+      size: pixel.length,
+    },
+  })
+
+  console.log(`шаг 9/9 — медиа для проверки HEAD: ок (id ${headMedia.id})`)
 
   // Проверяем результат фактом, а не отсутствием исключения: сид, который
   // «отработал» и ничего не создал, оставил бы пререндер таким же пустым.
@@ -254,6 +276,10 @@ const main = async () => {
   if (updated.slug !== CI_POST_SLUG) problems.push(`slug новости «${updated.slug}», ожидался «${CI_POST_SLUG}»`)
   if (cyrillicPost.slug !== CI_CYRILLIC_POST_SLUG)
     problems.push(`slug кириллической новости «${cyrillicPost.slug}», ожидался «${CI_CYRILLIC_POST_SLUG}»`)
+  // Имя файла фиксировано — по нему e2e открывает /api/media/file/<имя>.
+  // Переименование на стороне Payload дало бы e2e 404, неотличимый от Д1.
+  if (headMedia.filename !== CI_HEAD_MEDIA_FILENAME)
+    problems.push(`имя медиафайла «${headMedia.filename}», ожидалось «${CI_HEAD_MEDIA_FILENAME}»`)
 
   if (problems.length > 0) {
     console.error('::error::сид отработал, но результат не тот:')

@@ -44,3 +44,9 @@ export const CI_CYRILLIC_POST_TEXT = 'Текст кириллической но
 
 export const CI_DRAFT_INSTITUTION_SLUG = 'ci-draft-dk'
 export const CI_DRAFT_INSTITUTION_TITLE = 'CI: черновик дома культуры (не должен быть виден)'
+
+// Медиа для проверки HEAD (Д1 от 02.10): настоящий файл, отданный самим Payload
+// через /api/media/file/…, а не статика Next. Имя фиксировано — по нему e2e
+// открывает адрес напрямую. HEAD по /og.png зелен и без лечения, он Д1 не ловит.
+export const CI_HEAD_MEDIA_FILENAME = 'ci-head-check.png'
+export const CI_HEAD_MEDIA_ALT = 'CI: картинка для проверки HEAD'
