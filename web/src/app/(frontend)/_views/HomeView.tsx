@@ -168,7 +168,31 @@ export async function HomeView() {
             ))}
           </ul>
         </section>
-      ) : null}
+      ) : (
+        // Анонсов впереди нет — блок не прячем, а говорим честно: иначе
+        // посетитель «куда сходить» видит витрину прошедшего и уходит
+        // (вскрытие 08.10). Фактов не сочиняем — только куда смотреть дальше.
+        <section className="news-section paint-frame">
+          <div className="section-heading section-heading--left">
+            <p className="eyebrow">Не пропустите</p>
+            <h2>Ближайшие события</h2>
+          </div>
+          <p>
+            Новых анонсов пока нет. Свежие афиши — в общей ленте новостей, каждый
+            дом культуры — в своём разделе.
+          </p>
+          <p className="section-link">
+            <Link href="/news">
+              Все новости <span aria-hidden="true">→</span>
+            </Link>
+          </p>
+          <p className="section-link">
+            <Link href="/dk">
+              Все дома культуры района <span aria-hidden="true">→</span>
+            </Link>
+          </p>
+        </section>
+      )}
 
       <section className="news-section paint-frame">
         <div className="section-heading section-heading--left">
