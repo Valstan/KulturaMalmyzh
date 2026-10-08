@@ -9,6 +9,7 @@ import { withRetry } from '../../../lib/withRetry'
 import { RichText } from '../../../lib/RichText'
 import { FEED_PAGE_SIZE, getFeedPageSafe, type FeedPage } from '../../../lib/feed'
 import { isMentionFeed, MENTION_FEED_NOTE } from '../../../lib/institutions/mentionFeed'
+import { acceptsPushkinCard } from '../../../lib/institutions/pushkin'
 import { institutionJsonLd } from '../../../lib/jsonLd'
 import { JsonLd } from '../components/JsonLd'
 import { SectionTheme, themeOf } from '../components/SectionTheme'
@@ -140,6 +141,7 @@ export async function InstitutionView({ slug }: { slug: string }) {
               </a>
             </p>
           ))}
+          {acceptsPushkinCard(sectionSlug) ? <p>🎫 Здесь принимают Пушкинскую карту.</p> : null}
         </section>
       ) : null}
 
