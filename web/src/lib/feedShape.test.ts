@@ -4,11 +4,13 @@ import {
   FEED_MAX_PAGE_SIZE,
   FEED_PAGE_SIZE,
   emptyFeedPage,
+  escapeLike,
   feedWhere,
   mentionWhere,
   mentionedByStems,
   mergeFeedDocs,
   parseFeedQuery,
+  searchTokens,
   toFeedCard,
 } from './feedShape'
 import type { FeedCard } from './feedShape'
@@ -21,7 +23,7 @@ describe('parseFeedQuery', () => {
   const parse = (query: string) => parseFeedQuery(new URLSearchParams(query))
 
   it('по умолчанию — первая страница по 20', () => {
-    expect(parse('')).toEqual({ page: 1, limit: FEED_PAGE_SIZE, institutionSlug: null, type: null })
+    expect(parse('')).toEqual({ page: 1, limit: FEED_PAGE_SIZE, institutionSlug: null, type: null, q: null })
   })
 
   it('номер страницы и размер берутся из запроса', () => {
@@ -49,6 +51,17 @@ describe('parseFeedQuery', () => {
     expect(parse('type=news').type).toBe('news')
     expect(parse('type=afisha').type).toBeNull()
   })
+
+  it('поиск: пробелы по краям режутся, пустой — null (обычная лента)', () => {
+    expect(parse('q=концерт').q).toBe('концерт')
+    expect(parse('q=%20%20сабантуй%20%20').q).toBe('сабантуй')
+    expect(parse('q=%20%20').q).toBeNull()
+    expect(parse('').q).toBeNull()
+  })
+
+  it('поиск режется по длине, а не роняет запрос', () => {
+    expect(parse(`q=${'а'.repeat(200)}`).q).toHaveLength(64)
+  })
 })
 
 describe('feedWhere', () => {
@@ -71,6 +84,54 @@ describe('feedWhere', () => {
     // `feed.ts` на несуществующий слаг отдаёт пустую страницу, а не зовёт
     // `feedWhere(null)`: иначе раздел отдавал бы чужие записи.
     expect(feedWhere(null, null)).toEqual({ _status: { equals: 'published' } })
+  })
+
+  it('поиск добавляется условием по заголовку, статус не затирается', () => {
+    expect(feedWhere(undefined, null, 'концерт')).toEqual({
+      and: [{ _status: { equals: 'published' } }, { title: { like: '%концерт%' } }],
+    })
+  })
+
+  it('каждое слово обязательно (AND), а не «хоть одно»', () => {
+    expect(feedWhere(undefined, null, 'концерт Китяк')).toEqual({
+      and: [
+        { _status: { equals: 'published' } },
+        { title: { like: '%концерт%' } },
+        { title: { like: '%Китяк%' } },
+      ],
+    })
+  })
+
+  it('пустой поиск фильтра не ставит', () => {
+    expect(feedWhere(undefined, null, null)).toEqual({ _status: { equals: 'published' } })
+    expect(feedWhere(undefined, null, '   ')).toEqual({ _status: { equals: 'published' } })
+  })
+})
+
+describe('searchTokens', () => {
+  it('режет по пробелам, пустые отбрасывает, больше пяти не берёт', () => {
+    expect(searchTokens('концерт  Китяк')).toEqual(['концерт', 'Китяк'])
+    expect(searchTokens('  ')).toEqual([])
+    expect(searchTokens(null)).toEqual([])
+    expect(searchTokens('а б в г д е ж')).toHaveLength(5)
+  })
+
+  it('длинные слова режутся, короткие идут как есть', () => {
+    expect(searchTokens('а')).toEqual(['а'])
+    expect(searchTokens('б'.repeat(40))).toEqual(['б'.repeat(32)])
+  })
+})
+
+describe('escapeLike', () => {
+  it('% и _ ищутся буквально, а не как шаблоны', () => {
+    expect(escapeLike('100%')).toBe('100\\%')
+    expect(escapeLike('a_b')).toBe('a\\_b')
+    expect(escapeLike('a\\b')).toBe('a\\\\b')
+    expect(escapeLike('концерт')).toBe('концерт')
+  })
+
+  it('запрос из одного % не превращается в «найди всё»', () => {
+    expect(searchTokens('%')).toEqual(['\\%'])
   })
 })
 

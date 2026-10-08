@@ -23,6 +23,7 @@ type FeedQuery = {
   limit?: number
   institutionSlug?: string | null
   type?: FeedType | null
+  q?: string | null
 }
 
 export async function getFeedPage(query: FeedQuery = {}): Promise<FeedPage> {
@@ -55,7 +56,7 @@ export async function getFeedPage(query: FeedQuery = {}): Promise<FeedPage> {
     collection: 'posts',
     // `feedWhere` собирает те же объекты, что принимает `Where`, но держит их в
     // своём типе, чтобы не тянуть типы Payload в юниты.
-    where: feedWhere(institutionId, query.type ?? null) as Where,
+    where: feedWhere(institutionId, query.type ?? null, query.q ?? null) as Where,
     sort: '-date',
     depth: 1,
     limit,

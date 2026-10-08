@@ -57,6 +57,7 @@ export function parseFeedQuery(params: URLSearchParams | Record<string, string |
   limit: number
   institutionSlug: string | null
   type: FeedType | null
+  q: string | null
 } {
   const get = (key: string): string | null => {
     if (params instanceof URLSearchParams) return params.get(key)
@@ -70,7 +71,16 @@ export function parseFeedQuery(params: URLSearchParams | Record<string, string |
   const slug = (get('institution') ?? '').trim()
   const typeRaw = (get('type') ?? '').trim()
   const type: FeedType | null = typeRaw === 'event' || typeRaw === 'news' ? typeRaw : null
-  return { page, limit, institutionSlug: /^[a-z0-9-]{1,64}$/.test(slug) ? slug : null, type }
+  // Поиск: пустой запрос — обычная лента без фильтра. Обрезка длины — не
+  // цензура, а граница LIKE-паттерна: токены режутся отдельно ниже.
+  const rawQ = (get('q') ?? '').trim().slice(0, 64)
+  return {
+    page,
+    limit,
+    institutionSlug: /^[a-z0-9-]{1,64}$/.test(slug) ? slug : null,
+    type,
+    q: rawQ ? rawQ : null,
+  }
 }
 
 const asObject = (value: unknown): Record<string, unknown> | null =>
@@ -143,13 +153,36 @@ export function mergeFeedDocs(prev: FeedCard[], incoming: FeedCard[]): FeedCard[
 // `institutionId` обязан быть числом: `null` означал бы «фильтр не задан», и
 // лента молча стала бы общей. Сборщик (`feed.ts`) на такой случай отдаёт пустую
 // страницу сам, сюда такое не доходит.
-export function feedWhere(institutionId?: string | number | null, type?: FeedType | null): FeedWhere {
+export function feedWhere(institutionId?: string | number | null, type?: FeedType | null, q?: string | null): FeedWhere {
   const clauses: FeedWhere[] = [{ _status: { equals: 'published' } }]
   if (institutionId !== undefined && institutionId !== null) {
     clauses.push({ institution: { equals: institutionId } })
   }
   if (type) clauses.push({ type: { equals: type } })
+  for (const token of searchTokens(q)) {
+    clauses.push({ title: { like: `%${token}%` } })
+  }
   return clauses.length === 1 ? clauses[0] : { and: clauses }
+}
+
+// Токены поиска: слова запроса, каждое обязательно (AND). Ищется только по
+// заголовку: тело записи — jsonb, полнотекстового индекса нет, а LIKE по
+// сотням килобайт текста на запрос — не наш путь (та же причина, что у
+// mentionWhere). Регистр — дело адаптера: `like` в нашем стеке
+// регистронезависим (проверено лентой упоминаний и селф-тестом поиска).
+// `%` и `_` пользователя экранируются: иначе запрос из одного `%` нашёл бы
+// вообще всё, притворяясь поиском.
+export function searchTokens(q?: string | null): string[] {
+  const words = String(q ?? '')
+    .trim()
+    .split(/\s+/)
+    .filter((word) => word.length > 0)
+    .slice(0, 5)
+  return words.map((word) => escapeLike(word.slice(0, 32))).filter((word) => word.length > 0)
+}
+
+export function escapeLike(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
 }
 
 // Пустая страница. Отдельная функция, потому что ею пользуются два разных

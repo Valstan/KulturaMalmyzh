@@ -24,6 +24,7 @@ export async function GET(request: Request): Promise<Response> {
       limit: query.limit || FEED_PAGE_SIZE,
       institutionSlug: query.institutionSlug,
       type: query.type,
+      q: query.q,
     })
     return NextResponse.json(result, { headers: { 'Cache-Control': CACHE_CONTROL } })
   } catch (err) {

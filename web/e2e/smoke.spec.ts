@@ -70,6 +70,33 @@ test.describe('публичные страницы открываются в б�
     })
   })
 
+  // Поиск по ленте (вскрытие 08.10: 842 новости были неискаемы). Форма — обычный
+  // GET (`/news?q=…`): работает без JS, адрес sharable. Регистр не важен —
+  // проверяется и нижним, и верхним написанием того же слова.
+  test('поиск находит по слову и честно пуст на мусоре', async ({ page }) => {
+    await withoutPageErrors(page, async () => {
+      await page.goto('/news?q=тестовая')
+      await expect(page.getByRole('link', { name: CI_POST_TITLE_UPDATED })).toBeVisible()
+
+      await page.goto('/news?q=ТЕСТОВАЯ')
+      await expect(page.getByRole('link', { name: CI_POST_TITLE_UPDATED })).toBeVisible()
+
+      await page.goto('/news?q=zzzтакогонет')
+      await expect(page.getByText('ничего не нашлось')).toBeVisible()
+      await expect(page.getByRole('link', { name: CI_POST_TITLE_UPDATED })).toHaveCount(0)
+    })
+  })
+
+  test('форма поиска ведёт на тот же адрес с запросом', async ({ page }) => {
+    await withoutPageErrors(page, async () => {
+      await page.goto('/news')
+      await page.locator('#news-search-input').fill('тестовая')
+      await page.locator('#news-search-input').press('Enter')
+      await expect(page).toHaveURL(/\/news\?q=/)
+      await expect(page.getByRole('link', { name: CI_POST_TITLE_UPDATED })).toBeVisible()
+    })
+  })
+
   // Ради этого теста всё и затевалось: /news/[slug] остаётся `ƒ` и в пререндер не
   // попадает, поэтому ошибка рендера конкретного документа до сих пор не ловилась
   // ни сборкой, ни сидом.
