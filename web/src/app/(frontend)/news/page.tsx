@@ -12,13 +12,29 @@ export const revalidate = 60
 const NEWS_DESC =
   'Новости и афиши домов культуры Малмыжского района: анонсы событий, отчёты о прошедшем, жизнь сёл. Свежие — сверху.'
 
-export const metadata: Metadata = {
-  title: 'Новости',
-  description: NEWS_DESC,
-  alternates: { canonical: canonicalOf('/news') },
-  openGraph: openGraphWithImage({ path: '/news', title: 'Новости', description: NEWS_DESC }),
+type SearchParams = Promise<Record<string, string | string[] | undefined>>
+
+const firstParam = async (searchParams: SearchParams): Promise<string | null> => {
+  const raw = (await searchParams)['q']
+  const value = (Array.isArray(raw) ? raw[0] : raw)?.trim().slice(0, 64)
+  return value ? value : null
 }
 
-export default function NewsPage() {
-  return <NewsView />
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams: SearchParams
+}): Promise<Metadata> {
+  const q = await firstParam(searchParams)
+  const title = q ? `Поиск «${q}» — Новости` : 'Новости'
+  return {
+    title,
+    description: NEWS_DESC,
+    alternates: { canonical: canonicalOf('/news') },
+    openGraph: openGraphWithImage({ path: '/news', title, description: NEWS_DESC }),
+  }
+}
+
+export default async function NewsPage({ searchParams }: { searchParams: SearchParams }) {
+  return <NewsView q={await firstParam(searchParams)} />
 }

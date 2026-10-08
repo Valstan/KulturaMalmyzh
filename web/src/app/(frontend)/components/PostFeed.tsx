@@ -21,6 +21,7 @@ export type PostFeedProps = {
   totalPages: number
   institutionSlug?: string | null
   type?: 'news' | 'event' | null
+  q?: string | null
   showInstitution?: boolean
   showCategory?: boolean
   showType?: boolean
@@ -34,6 +35,7 @@ export function PostFeed({
   totalPages,
   institutionSlug = null,
   type = null,
+  q = null,
   showInstitution = true,
   showCategory = false,
   showType = true,
@@ -57,6 +59,7 @@ export function PostFeed({
       const params = new URLSearchParams({ page: String(page + 1), limit: String(FEED_PAGE_SIZE) })
       if (institutionSlug) params.set('institution', institutionSlug)
       if (type) params.set('type', type)
+      if (q) params.set('q', q)
       const res = await fetch(`/api/feed?${params.toString()}`, { headers: { accept: 'application/json' } })
       if (!res.ok) throw new Error(`статус ${res.status}`)
       const data = (await res.json()) as { docs?: FeedCard[]; page?: number; totalPages?: number }
@@ -72,7 +75,7 @@ export function PostFeed({
       busy.current = false
       setLoading(false)
     }
-  }, [institutionSlug, page, type])
+  }, [institutionSlug, page, q, type])
 
   useEffect(() => {
     const node = sentinel.current
