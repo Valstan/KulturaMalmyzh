@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { classifyEmptyTitle, isDerivedTitle, posterTitle } from './posters'
+import { classifyEmptyTitle, isDerivedTitle, placeLabel, posterTitle } from './posters'
 
 describe('isDerivedTitle', () => {
   it('ловит формат своего мотора с подписью дома', () => {
@@ -11,6 +11,15 @@ describe('isDerivedTitle', () => {
   })
   it('ловит строчную запись', () => {
     expect(isDerivedTitle('мелеть: запись от 2024-05-09')).toBe(true)
+  })
+  it('ловит точный v1 для переезда в v2', () => {
+    expect(isDerivedTitle('Афиша от 2026-09-29')).toBe(true)
+  })
+  it('v2 с хвостом места — уже не кандидат (идемпотентность)', () => {
+    expect(isDerivedTitle('Афиша от 2026-09-29 · Порез')).toBe(false)
+  })
+  it('ручная правка поверх v1 — не кандидат', () => {
+    expect(isDerivedTitle('Афиша от 2026-09-29 (концерт!)')).toBe(false)
   })
   it('не трогает обычные заголовки', () => {
     expect(isDerivedTitle('КРОСС НАЦИИ — 2026!')).toBe(false)
@@ -31,12 +40,36 @@ describe('posterTitle', () => {
   it('афиша датирована датой оригинала, а не сегодня', () => {
     expect(posterTitle('2026-09-29T17:26:17.000Z')).toBe('Афиша от 2026-09-29')
   })
+  it('с местом — различитель через точку', () => {
+    expect(posterTitle('2026-09-29T17:26:17.000Z', 'Порез')).toBe('Афиша от 2026-09-29 · Порез')
+  })
+  it('пустое место — честный старый формат', () => {
+    expect(posterTitle('2026-09-29T17:26:17.000Z', '  ')).toBe('Афиша от 2026-09-29')
+  })
+})
+
+describe('placeLabel', () => {
+  it('короткое имя первично', () => {
+    expect(placeLabel('Калинино', 'с. Калинино')).toBe('Калинино')
+  })
+  it('без короткого — поселение без префикса', () => {
+    expect(placeLabel(null, 'д. Порез')).toBe('Порез')
+    expect(placeLabel('', 'г. Малмыж')).toBe('Малмыж')
+  })
+  it('пусто везде — пусто', () => {
+    expect(placeLabel(null, null)).toBe('')
+  })
 })
 
 describe('classifyEmptyTitle', () => {
   it('одно фото без текста — афиша', () => {
     expect(
       classifyEmptyTitle({ title: 'Порез: запись от 2026-09-29', text: '', photoCount: 1, videoCount: 0 }),
+    ).toBe('poster')
+  })
+  it('v1-афиша с одним фото — снова афиша (переезд в v2)', () => {
+    expect(
+      classifyEmptyTitle({ title: 'Афиша от 2026-09-29', text: '', photoCount: 1, videoCount: 0 }),
     ).toBe('poster')
   })
   it('ни текста, ни фото, ни видео — удалить', () => {

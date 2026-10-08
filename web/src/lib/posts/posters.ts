@@ -14,6 +14,13 @@ import { safeRevalidatePath } from '../safeRevalidate'
 // Правило владельца:
 //   - одно фото и нет текста — это афиша: публикуем, заголовок
 //     «Афиша от ГГГГ-ММ-ДД» (дата — дата оригинала, не сегодня);
+// v2 (вскрытие 08.10, формат на утверждение сухим прогоном): к дате добавляется
+// различитель «· Место» (короткое имя дома из его карточки) — иначе соседние
+// афиши разных ДК неразличимы, вкладки и сниппеты одинаковые. Префикс заказа
+// 02.10 сохранён. Уже переименованные в v1 («Афиша от ДАТА» точь-в-точь) —
+// снова кандидаты и переезжают в v2; с хвостом «· Место» под паттерн не
+// подходят (идемпотентность). Ручные правки редактора (не точное совпадение)
+// не трогаем, как и раньше.
 //   - нет ни текста, ни фото, ни видео — удаляем;
 //   - всё остальное (есть текст, есть видео, фотоальбом из нескольких) —
 //     НЕ трогаем: заказа не было, судьбу решает человек.
@@ -31,14 +38,33 @@ import { safeRevalidatePath } from '../safeRevalidate'
 
 // Регистр — явными вариантами, а не флагом: на кириллицу в проверках
 // полагаться нельзя (G259, grep -i слеп — та же семья).
-const DERIVED_TITLE_RE = /[Зз]апись от \d{4}-\d{2}-\d{2}/
+const FALLBACK_TITLE_RE = /[Зз]апись от \d{4}-\d{2}-\d{2}/
+
+// v1 операции (заказ 02.10): точное «Афиша от ДАТА» без хвоста. Такие снова
+// кандидаты — их переименовываем в v2. Хвост «· Место» v2 сюда не подходит
+// (якорь конца), иначе операция гонялась бы по своим же следам.
+const V1_POSTER_RE = /^[Аа]фиша от \d{4}-\d{2}-\d{2}$/
 
 export function isDerivedTitle(title: unknown): boolean {
-  return typeof title === 'string' && DERIVED_TITLE_RE.test(title)
+  return (
+    typeof title === 'string' && (FALLBACK_TITLE_RE.test(title) || V1_POSTER_RE.test(title))
+  )
 }
 
-export function posterTitle(dateIso: string): string {
-  return `Афиша от ${dateIso.slice(0, 10)}`
+// Различитель афиши: короткое имя дома культуры из его карточки. Поселение —
+// запасной путь (префикс «с./д./г./п.» срезаем — в заголовке ему не место).
+// Пусто везде — честный старый формат без хвоста, а не выдуманное место.
+export function placeLabel(shortTitle?: string | null, settlement?: string | null): string {
+  const short = (shortTitle ?? '').trim()
+  if (short) return short
+  const place = (settlement ?? '').trim().replace(/^(г|с|д|п)\.\s+/u, '')
+  return place
+}
+
+export function posterTitle(dateIso: string, place?: string | null): string {
+  const base = `Афиша от ${dateIso.slice(0, 10)}`
+  const label = (place ?? '').trim()
+  return label ? `${base} · ${label}` : base
 }
 
 export type EmptyTitleDoc = {
@@ -128,7 +154,7 @@ export async function retitlePosters(
   const rows = all.docs as unknown as Record<string, unknown>[]
   summary.scanned = rows.length
 
-  const slugs = new Map<number, { slug?: string | null; title?: string | null }>()
+  const slugs = new Map<number, { slug?: string | null; title?: string | null; short?: string | null; settlement?: string | null }>()
   const institutions = await payload.find({
     collection: 'institutions',
     pagination: false,
@@ -139,8 +165,10 @@ export async function retitlePosters(
     id: number
     slug?: string | null
     title?: string | null
+    shortTitle?: string | null
+    settlement?: string | null
   }[]) {
-    slugs.set(doc.id, { slug: doc.slug ?? null, title: doc.title ?? null })
+    slugs.set(doc.id, { slug: doc.slug ?? null, title: doc.title ?? null, short: doc.shortTitle ?? null, settlement: doc.settlement ?? null })
   }
 
   const prepared: PreparedDoc[] = rows.map((row) => {
@@ -182,13 +210,18 @@ export async function retitlePosters(
     tally.set(key, row)
   }
 
+  const placeOf = (doc: PreparedDoc): string => {
+    const ref = doc.institutionId ? slugs.get(doc.institutionId) : undefined
+    return placeLabel(ref?.short, ref?.settlement)
+  }
+
   for (const doc of dated.slice(0, 20)) {
     summary.samples.push({
       id: doc.id,
       title: doc.title ?? '',
       status: doc.status,
       action: 'retitle',
-      newTitle: posterTitle(doc.date as string),
+      newTitle: posterTitle(doc.date as string, placeOf(doc)),
     })
   }
   for (const doc of empties.slice(0, 20)) {
@@ -214,7 +247,7 @@ export async function retitlePosters(
         collection: 'posts',
         id: doc.id,
         context: { disableRevalidate: true },
-        data: { title: posterTitle(doc.date as string) },
+        data: { title: posterTitle(doc.date as string, placeOf(doc)) },
       })
       summary.postersRetitled += 1
     } catch (err) {
