@@ -278,6 +278,19 @@ test('дома культуры: картинка, короткое имя и п
     expect(decodeURIComponent(new URL(canonical as string).pathname)).toBe(`/news/${CI_CYRILLIC_POST_SLUG}`)
   })
 
+  // Страница списка обязана говорить про ленту, а не повторять общее описание
+  // портала: раньше description /news дублировал главную один в один, и
+  // поисковик видел две страницы с одинаковым сниппетом (вскрытие 08.10).
+  test('у ленты новостей своё описание, а не общее с главной', async ({ page }) => {
+    await page.goto('/')
+    const homeDesc = await page.locator('meta[name="description"]').getAttribute('content')
+    await page.goto('/news')
+    const newsDesc = await page.locator('meta[name="description"]').getAttribute('content')
+    expect(newsDesc, 'нет description у /news').not.toBeNull()
+    expect(newsDesc, 'description /news дублирует главную').not.toBe(homeDesc)
+    expect(newsDesc, 'description /news не про ленту').toContain('Свежие')
+  })
+
   // Структурированная разметка — та же ловушка, что была у метаданных: если
   // сборщик JSON-LD упадёт или его вызов уберут со страницы, глазами этого не
   // увидеть (страница отрендерится нормально), а поисковик потеряет дату,
