@@ -3,6 +3,7 @@ import Image from 'next/image'
 
 import { formatPostDate } from '../../../lib/format'
 import { institutionBadge, institutionHref, institutionLabel } from '../../../lib/institutions'
+import { coverAlt } from '../../../lib/posts/coverAlt'
 
 // Карточка материала с превью — общая для главной и разделов домов культуры
 // (заказ владельца 30.09: в ленте раздела тоже картинки, не только заголовки).
@@ -108,7 +109,10 @@ export function PostCard({
           <Image
             className="news-card__cover"
             src={src}
-            alt=""
+            // alt есть всегда (для поиска по картинкам), а дерево доступности
+            // не трогаем: ссылка-обёртка aria-hidden, заголовок рядом озвучен.
+            // Подробности — в комментарии к coverAlt.
+            alt={coverAlt(cover?.alt, title)}
             width={size?.width || cover?.width || 768}
             height={size?.height || cover?.height || 432}
             sizes="(max-width: 640px) 100vw, 200px"
