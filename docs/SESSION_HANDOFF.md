@@ -28,8 +28,10 @@ by pnpm» и эти ключи игнорирует. Настройки пере
 
 **Правки:**
 - пины: `next` 15.5.25 → 15.5.28, `sharp` 0.35.4 → 0.35.5, `eslint-config-next` → 15.5.28;
-- overrides: `dompurify` ^3.4.17, `happy-dom` ^21.0.4, `nodemailer` ^10.0.6,
-  `source-map-js` ^1.2.2, `undici` ^7.30.1 — плюс прежние четыре, перенесённые как были;
+- overrides: `dompurify` ^3.4.17, `graphql-scalars` ^2.0.1, `happy-dom` ^21.0.4,
+  `nodemailer` ^10.0.6, `source-map-js` ^1.2.2, `undici` ^7.30.1 — плюс прежние
+  четыре, перенесённые как были, с полом `fast-uri` поднятым до ^3.1.9;
+- `fast-copy` 3.0.2 → 3.1.0 обновлением резолюции (в диапазоне `^3.0.2` родителя);
 - `payload.config.ts`: тип `transportOptions` выводится из сигнатуры адаптера. В
   nodemailer 10 `auth` переехал с уровня соединения на уровень транспорта, а
   `@payloadcms/email-nodemailer@3.90.1` типизирует `transportOptions` как
@@ -37,9 +39,12 @@ by pnpm» и эти ключи игнорирует. Настройки пере
   использование: рантайм проверен — адаптер отдаёт объект прямо в
   `nodemailer.createTransport()`, а `SMTPTransport` 10 читает `options.auth`.
 
-**Замер:** critical 1 → **0**, high 10 → **0**, moderate 34 → 4, low 11 → 3.
-Локально: `pnpm audit --prod` чист, lint 0 warnings, typecheck 0 ошибок, юниты
-345/345, проба API `happy-dom` 21 и `nodemailer` 10 — 7/7.
+**Замер:** critical 1 → **0**, high 10 → **0**, moderate 34 → 1, low 11 → 1.
+Осталось два находки ниже порога: `esbuild` 0.18.20 (moderate, путь через
+`drizzle-kit` — dev-инструмент, патч вне диапазона родителя) и `deepmerge` 4.3.1
+(low, патча нет вовсе).
+Локально: lint 0 warnings, typecheck 0 ошибок, юниты 345/345, проба API
+`happy-dom` 21, `nodemailer` 10 и `graphql-scalars` 2 — 7/7.
 
 **В работе 2026-10-08 — поиск по новостям (дыра вскрытия: 842 записи неискаемы)**
 
@@ -626,8 +631,13 @@ sitemap 881 = ленте 842, черновиков в sitemap нет). Два и
   просто не применится. Найдено 29.10 при починке аудита зависимостей.
 - **Колонка «через наш пин» в логе `pnpm audit` — эвристика, а не правда дерева.**
   Настоящие родители оказались другие: `dompurify` — `monaco-editor`,
-  `happy-dom` — `@lexical/headless`, `undici` — `payload`. Смотреть путь в
-  lockfile, а не в лог аудита.
+  `happy-dom` — `@lexical/headless`, `undici` — `payload`, `graphql-scalars` —
+  `@payloadcms/graphql`. Смотреть путь в lockfile, а не в лог аудита.
+- **Локальный `pnpm audit` в каталоге с `node_modules` видит не всё, что видит
+  гейт.** Первый замер после правок дал `high 0`, гейт на той же ветке — `high 1`
+  (`graphql-scalars`). Гейт читает lockfile и не ставит дерево. Проверено: тот же
+  lockfile, замер «как в CI» (три файла в пустом каталоге, без `node_modules`),
+  даёт ровно цифры гейта. **Аудит мерить так же, как мерит гейт.**
 - **409 в `internal-run.yml` = пропуск, а conclusion всё равно success (30.09).** Сид после #96 упёрся в замок 20-минутного импорта по таймеру, вернул 409 «уже идёт», прогон позеленел — а `website` так и не прописался. Урок: у ручных операций читать итог в ТЕЛЕ лога (`"created"/"updated"`), а не conclusion. Починено тем же PR: 409 теперь даёт `::warning::` (прогон жёлтый). Импорт держит замок ~20 из каждых 30 минут — ручные пишущие операции планировать в окно.
 - **`gh pr merge --auto` в репо выключен** (`enablePullRequestAutoMerge`) — мерж руками по зелёному.
 - **`.github/**` в `paths-ignore` деплоя:** правка workflow не выкатывается сама, нужен `gh workflow run deploy-prod.yml --ref main`; при dispatch Migration guard пропускается.
