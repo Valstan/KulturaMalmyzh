@@ -28,11 +28,11 @@
     "@payloadcms/richtext-lexical": "3.90.1",
     "graphql": "^16.8.2",
     "ipaddr.js": "2.2.0",
-    "next": "15.5.25",
+    "next": "15.5.28",
     "payload": "3.90.1",
     "react": "19.2.1",
     "react-dom": "19.2.1",
-    "sharp": "0.35.4"
+    "sharp": "0.35.5"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
@@ -42,7 +42,7 @@
     "@types/react-dom": "19.2.3",
     "cross-env": "^7.0.3",
     "eslint": "^9.16.0",
-    "eslint-config-next": "15.5.25",
+    "eslint-config-next": "15.5.28",
     "knip": "^6.16.1",
     "prettier": "^3.4.2",
     "typescript": "5.7.3",
@@ -52,18 +52,5 @@
     "node": "^18.20.2 || >=20.9.0",
     "pnpm": "^9 || ^10"
   },
-  "packageManager": "pnpm@10.15.0",
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "sharp",
-      "esbuild",
-      "unrs-resolver"
-    ],
-    "overrides": {
-      "fast-uri": "^3.1.6",
-      "js-yaml@>=4": "^4.3.2",
-      "immutable": "^4.3.9",
-      "postcss@>=8": "^8.5.18"
-    }
-  }
+  "packageManager": "pnpm@10.15.0"
 }

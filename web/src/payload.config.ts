@@ -27,6 +27,21 @@ const ORIGINS = Array.from(
   new Set([process.env.NEXT_PUBLIC_SERVER_URL, PORTAL_ORIGIN, LEGACY_ORIGIN].filter(Boolean)),
 ) as string[]
 
+// Тип transportOptions берём из сигнатуры самого адаптера, а не из предположения
+// о нём: так утверждение ниже последует за адаптером, если он обновится.
+//
+// Утверждение нужно потому, что в nodemailer 10 поле `auth` переехало с уровня
+// соединения на уровень транспорта, а `@payloadcms/email-nodemailer@3.90.1`
+// типизирует transportOptions как `SMTPConnection.Options` — где `auth` больше
+// нет. Это отстал ТИП адаптера, а не наше использование: рантайм проверен —
+// адаптер отдаёт объект прямо в `nodemailer.createTransport()`, а `SMTPTransport`
+// в 10.x читает `options.auth` и без него письма не авторизуются. Без
+// утверждения `tsc` падает с «'auth' does not exist in type
+// 'SMTPConnectionOptions'» на живом, работающем SMTP.
+type AdapterTransportOptions = NonNullable<
+  NonNullable<Parameters<typeof nodemailerAdapter>[0]>['transportOptions']
+>
+
 export default buildConfig({
   admin: {
     user: Users.slug,
@@ -69,7 +84,7 @@ export default buildConfig({
             user: process.env.SMTP_USER,
             pass: process.env.SMTP_PASS,
           },
-        },
+        } as AdapterTransportOptions,
       })
     : undefined,
   // Оба домена: боевой URL бейкается один, но второе имя (алиас раздела ДК)
