@@ -9,6 +9,7 @@ import { withRetry } from '../../../lib/withRetry'
 import { RichText } from '../../../lib/RichText'
 import { FEED_PAGE_SIZE, getFeedPageSafe, type FeedPage } from '../../../lib/feed'
 import { isMentionFeed, MENTION_FEED_NOTE } from '../../../lib/institutions/mentionFeed'
+import { institutionDescription } from '../../../lib/institutions/meta'
 import { acceptsPushkinCard } from '../../../lib/institutions/pushkin'
 import { institutionJsonLd } from '../../../lib/jsonLd'
 import { JsonLd } from '../components/JsonLd'
@@ -60,13 +61,17 @@ export async function institutionMeta(slug: string): Promise<Metadata> {
   try {
     const institution = await getInstitution(decodeURIComponent(slug))
     if (!institution) return {}
+    // Описание раздела: живое из базы, иначе фолбэк из названия и поселения
+    // (решение владельца 30.10) — иначе раздел остаётся без meta-description.
+    const description = institutionDescription(institution)
     return {
       title: institution.title || SITE_NAME,
-      description: institution.description || undefined,
+      description,
       alternates: { canonical: canonicalOf(`/dk/${slug}`) },
       openGraph: openGraphWithImage({
         path: `/dk/${slug}`,
         title: institution.title || SITE_NAME,
+        description,
       }),
     }
   } catch {
@@ -79,6 +84,10 @@ export async function InstitutionView({ slug }: { slug: string }) {
   // отсутствие → notFound().
   const institution = await getInstitution(decodeURIComponent(slug))
   if (!institution) notFound()
+
+  // Разметка и метаданные раздела говорят одно и то же: описание из базы, а
+  // если его нет — фолбэк из названия и поселения (решение владельца 30.10).
+  const description = institutionDescription(institution)
 
   // У части учреждений сообществ несколько: РЦКД печатает и в группе, и на
   // личной странице, у пяти сельских ДК рядом с действующей живёт прежняя.
@@ -109,7 +118,7 @@ export async function InstitutionView({ slug }: { slug: string }) {
         data={institutionJsonLd({
           slug: sectionSlug,
           title: institution.title || '',
-          description: institution.description,
+          description,
           address: institution.address,
           phone: institution.phone,
         })}

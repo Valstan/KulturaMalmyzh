@@ -158,6 +158,21 @@ test.describe('публичные страницы открываются в б�
     expect(res?.status()).toBe(404)
   })
 
+  // Раздел, у которого живое описание в базе пустое, всё равно обязан отдать
+  // `<meta name="description">`: решение владельца 30.10 — кодовый фолбэк из
+  // названия и населённого пункта. Без него раздел остаётся страницей без
+  // описания (так было на /dk/rckd и /dk/kalinino).
+  test('у раздела без живого описания есть описание страницы', async ({ page }) => {
+    await withoutPageErrors(page, async () => {
+      await page.goto(`/dk/${CI_INSTITUTION_SLUG}`)
+      const description = await page.locator('meta[name="description"]').getAttribute('content')
+      expect(description, 'нет description у раздела дома культуры').not.toBeNull()
+      expect(description, 'описание собрано не из названия учреждения').toContain(
+        CI_INSTITUTION_TITLE_UPDATED,
+      )
+    })
+  })
+
   test('из общей ленты виден бейдж дома культуры', async ({ page }) => {
     await withoutPageErrors(page, async () => {
       await page.goto('/news')
